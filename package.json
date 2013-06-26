@@ -19,7 +19,7 @@
     "type": "git",
     "url": "git://github.com/chbrown/parallel-wget.git"
   },
-  "devDependencies": {
+  "dependencies": {
     "async": "*",
     "mkdirp": "*",
     "optimist": "*",
