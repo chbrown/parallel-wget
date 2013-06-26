@@ -1,6 +1,6 @@
 {
   "name": "parallel-wget",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Parallel wget (network retriever)",
   "author": "Christopher Brown <io@henrian.com> (http://henrian.com)",
   "homepage": "https://github.com/chbrown/parallel-wget",
