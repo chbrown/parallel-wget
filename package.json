@@ -1,0 +1,29 @@
+{
+  "name": "parallel-wget",
+  "version": "0.0.1",
+  "description": "Parallel wget (network retriever)",
+  "author": "Christopher Brown <io@henrian.com> (http://henrian.com)",
+  "homepage": "https://github.com/chbrown/parallel-wget",
+  "license": "MIT",
+  "keywords": [
+    "wget",
+    "curl",
+    "parallel",
+    "download",
+    "concurrent"
+  ],
+  "bin": {
+    "parallel-wget": "index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/chbrown/parallel-wget.git"
+  },
+  "devDependencies": {
+    "async": "*",
+    "mkdirp": "*",
+    "optimist": "*",
+    "request": "*",
+    "winston": "*"
+  }
+}
