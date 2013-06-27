@@ -50,18 +50,25 @@ function downloadUrl(urlStr, filepath, callback) {
 
   var req = request.get(urlStr);
   req.on('error', function(err) {
+    logger.error('Request error');
     callback(err);
   });
   req.on('response', function(res) {
     res.on('error', function(err) {
+      logger.error('Response error');
       callback(err);
     });
-    res.pipe(file).on('finish', function() {
+    res.pipe(file)
+    .on('finish', function() {
       logger.debug(tmp_filepath + ' done');
       fs.rename(tmp_filepath, filepath, function(err) {
         logger.debug(tmp_filepath + ' moved to ' + filepath);
         callback(err);
-      });
+      })
+    })
+    .on('error', function(err) {
+      logger.error('Output file error');
+      callback(err);
     });
   });
 }
@@ -91,7 +98,16 @@ var downloadUrls = module.exports.downloadUrls = function(dirpath, limit, urls, 
   }, limit);
 
   q.drain = function() {
+    logger.warn('Queue drained');
     callback();
+  };
+
+  q.empty = function() {
+    logger.warn('Queue emptied');
+  };
+
+  q.saturated = function() {
+    logger.warn('Queue saturated');
   };
 
   q.push(urls, function(err) {
@@ -110,7 +126,7 @@ if (require.main === module) {
       '',
       'Options:',
       '  -c, --concurrency 10    number of downloads to perform at one time',
-      '  -d, --directory .       destination directory (must already exist)',
+      '  -d, --directory .       destination directory',
       '  -v, --verbose           log more events',
       '',
       'Only STDIN is supported, and it is coerced to utf8',
@@ -138,7 +154,7 @@ if (require.main === module) {
       logger.error('Directory could not be created / accessed. ' + err.toString());
     }
     else {
-      logger.debug('Directory created / already exists: ' + argv.directory);
+      logger.debug('Directory created or already exists: ' + argv.directory);
       readLines(process.stdin, function(err, urls) {
         if (err) {
           logger.error('Could not read from STDIN. ' + err.toString());
