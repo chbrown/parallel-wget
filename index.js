@@ -1,12 +1,15 @@
 #!/usr/bin/env node
-'use strict'; /*jslint node: true, es5: true, indent: 2 */
+'use strict'; /*jslint node: true, es5: true, indent: 2 */ /*globals setImmediate */
 var async = require('async');
 var fs = require('fs');
 var logger = require('winston');
 var mkdirp = require('mkdirp');
 var path = require('path');
 var request = require('request');
+var request = require('request');
 var url = require('url');
+var Queue = require('./queue');
+
 
 function readLines(stream, callback) {
   // callback signature: callback(err, lines)
@@ -44,30 +47,32 @@ var url2Filename = module.exports.url2Filename = function(urlStr) {
 function downloadUrl(urlStr, filepath, callback) {
   var tmp_filepath = filepath + '.tmp';
 
-  var file = fs.createWriteStream(tmp_filepath);
-
-  logger.debug(tmp_filepath + ' starting');
+  logger.debug(tmp_filepath + ' < creating request');
 
   var req = request.get(urlStr);
   req.on('error', function(err) {
-    logger.error('Request error');
+    logger.error('Request error: ' + err.toString());
     callback(err);
   });
   req.on('response', function(res) {
     res.on('error', function(err) {
-      logger.error('Response error');
+      logger.error('Response error: ' + err.toString());
       callback(err);
     });
-    res.pipe(file)
-    .on('finish', function() {
-      logger.debug(tmp_filepath + ' done');
+
+    var file = res.pipe(fs.createWriteStream(tmp_filepath));
+    file.on('finish', function() {
+      logger.debug(tmp_filepath + ' done (' + res.headers['content-length'] + ' bytes)');
       fs.rename(tmp_filepath, filepath, function(err) {
+        if (err) {
+          logger.error('Move file error: ' + err.toString());
+        }
         logger.debug(tmp_filepath + ' moved to ' + filepath);
         callback(err);
-      })
-    })
-    .on('error', function(err) {
-      logger.error('Output file error');
+      });
+    });
+    file.on('error', function(err) {
+      logger.error('Output file error: ' + tmp_filepath);
       callback(err);
     });
   });
@@ -75,7 +80,6 @@ function downloadUrl(urlStr, filepath, callback) {
 
 function ensureUrl(urlStr, dirpath, callback) {
   // callback signature: function(err)
-
   var local_filename = url2Filename(urlStr);
   var local_filepath = path.join(dirpath, local_filename);
 
@@ -89,33 +93,6 @@ function ensureUrl(urlStr, dirpath, callback) {
     }
   });
 }
-
-var downloadUrls = module.exports.downloadUrls = function(dirpath, limit, urls, callback) {
-  var processed = 0;
-  var q = async.queue(function (url, callback) {
-    logger.debug('task #' + (++processed) + ' (' + q.length() + ' left, ' + urls.length + ' total)');
-    ensureUrl(url, dirpath, callback);
-  }, limit);
-
-  q.drain = function() {
-    logger.warn('Queue drained');
-    callback();
-  };
-
-  q.empty = function() {
-    logger.warn('Queue emptied');
-  };
-
-  q.saturated = function() {
-    logger.warn('Queue saturated');
-  };
-
-  q.push(urls, function(err) {
-    if (err) {
-      logger.error(err.toString(), err);
-    }
-  });
-};
 
 if (require.main === module) {
   var argv = require('optimist')
@@ -149,9 +126,22 @@ if (require.main === module) {
 
   logger.debug('argv', argv);
 
+  // var downloadUrls = module.exports.downloadUrls = function(dirpath, concurrency, urls, callback) {
+  var queue = new Queue(argv.concurrency);
+
+  queue.on('start', function(url, callback) {
+    logger.debug('start', {completed: queue.completed, remaining: queue.remaining});
+    ensureUrl(url, argv.directory, callback);
+  });
+
+  queue.on('finish', function(err, task) {
+    if (err) logger.error(err.toString(), err);
+    logger.debug('finish', {completed: queue.completed, remaining: queue.remaining});
+  });
+
   mkdirp(argv.directory, function(err) {
     if (err) {
-      logger.error('Directory could not be created / accessed. ' + err.toString());
+      logger.error('Directory could not be created or accessed. ' + err.toString());
     }
     else {
       logger.debug('Directory created or already exists: ' + argv.directory);
@@ -161,8 +151,10 @@ if (require.main === module) {
         }
         else {
           logger.info('Downloading ' + urls.length + ' urls');
-          downloadUrls(argv.directory, argv.limit, urls, function() {
-            logger.info('Done');
+
+          queue.push(urls);
+          queue.on('drain', function() {
+            logger.info('Queue drained. Done with ' + queue.completed + ' urls.');
           });
         }
       });
