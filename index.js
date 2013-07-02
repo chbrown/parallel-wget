@@ -2,6 +2,7 @@
 'use strict'; /*jslint node: true, es5: true, indent: 2 */ /*globals setImmediate */
 var async = require('async');
 var fs = require('fs');
+var http = require('http');
 var https = require('https');
 var logger = require('winston');
 var mkdirp = require('mkdirp');
@@ -9,6 +10,7 @@ var path = require('path');
 var Queue = require('./queue');
 var url = require('url');
 
+var httpx = {'http:': http, 'https:': https};
 
 function readLines(stream, callback) {
   // callback signature: callback(err, lines)
@@ -58,8 +60,8 @@ function downloadUrl(urlStr, filepath, argv, callback) {
     agent: false,
   };
 
-  logger.debug('https.get', request_options);
-  var req = https.get(request_options, function(res) {
+  logger.debug('http[s].get', request_options);
+  var req = httpx[urlObj.protocol].get(request_options, function(res) {
     if (res.statusCode == 200) {
       var tmp_filepath = filepath + '.tmp';
       logger.debug('opening file for writing: ' + tmp_filepath);
@@ -89,6 +91,18 @@ function downloadUrl(urlStr, filepath, argv, callback) {
       callback(res);
     }
   });
+
+  if (argv.timeout) {
+    req.setTimeout(argv.timeout, function() {
+      req.destroy();
+
+      var err = new Error('Request timeout (' + argv.timeout + 'ms)');
+      err.code = "ETIMEDOUT";
+
+      logger.error(err.toString());
+      callback(err);
+    });
+  }
 
   req.on('error', function(err) {
     logger.error('Request error: ' + err.toString());
