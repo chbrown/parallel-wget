@@ -2,12 +2,12 @@
 'use strict'; /*jslint node: true, es5: true, indent: 2 */ /*globals setImmediate */
 var async = require('async');
 var fs = require('fs');
+var https = require('https');
 var logger = require('winston');
 var mkdirp = require('mkdirp');
 var path = require('path');
-var request = require('request');
-var url = require('url');
 var Queue = require('./queue');
+var url = require('url');
 
 
 function readLines(stream, callback) {
@@ -28,7 +28,8 @@ function readLines(stream, callback) {
 var url2Filename = module.exports.url2Filename = function(urlStr) {
   // returns a filename (not a filepath)
   // currently transforms something like
-  //   https://s3.west..omename/...asiu/2012/05/07/15/10_activities.json.gz?AWSAccessKeyId=this&Expires=then&Signature=that
+  //   https://s3.west..omename/...asiu/2012/05/07/15/10_activities.json\
+  //     .gz?AWSAccessKeyId=this&Expires=then&Signature=that
   // to
   //   2012-05-07T15-10_activities.json.gz
   // override this with your own transform!
@@ -43,34 +44,41 @@ var url2Filename = module.exports.url2Filename = function(urlStr) {
   return date + '_' + m[6];
 };
 
-function downloadUrl(urlStr, filepath, opts, callback) {
-  var tmp_filepath = filepath + '.tmp';
+function downloadUrl(urlStr, filepath, argv, callback) {
+  var urlObj = url.parse(urlStr);
+  // headers: An object containing request headers.
+  // agent: When an Agent is used request will default to Connection: keep-alive. Possible values:
+  //   undefined (default): use global Agent for this host and port.
+  //   Agent object: explicitly use the passed in Agent.
+  //   false: opts out of connection pooling with an Agent, defaults request to Connection: close.
+  var request_options = {
+    hostname: urlObj.hostname,
+    path: urlObj.path,
+    timeout: argv.timeout,
+    agent: false,
+  };
 
-  logger.debug(tmp_filepath + ' creating request');
-
-  var req = request.get(urlStr, opts);
-  req.on('error', function(err) {
-    logger.error('Request error: ' + err.toString());
-    callback(err);
-  });
-  req.on('response', function(res) {
-    res.on('error', function(err) {
-      logger.error('Response error: ' + err.toString());
-      callback(err);
-    });
-
+  logger.debug('https.get', request_options);
+  var req = https.get(request_options, function(res) {
     if (res.statusCode == 200) {
+      var tmp_filepath = filepath + '.tmp';
+      logger.debug('opening file for writing: ' + tmp_filepath);
+
       var file = res.pipe(fs.createWriteStream(tmp_filepath));
+
       file.on('finish', function() {
         logger.debug(tmp_filepath + ' done (' + res.headers['content-length'] + ' bytes)');
         fs.rename(tmp_filepath, filepath, function(err) {
           if (err) {
             logger.error('Move file error: ' + err.toString());
           }
-          logger.debug(tmp_filepath + ' moved to ' + filepath);
+          else {
+            logger.debug(tmp_filepath + ' moved to ' + filepath);
+          }
           callback(err);
         });
       });
+
       file.on('error', function(err) {
         logger.error('Output file error: ' + tmp_filepath);
         callback(err);
@@ -81,9 +89,14 @@ function downloadUrl(urlStr, filepath, opts, callback) {
       callback(res);
     }
   });
+
+  req.on('error', function(err) {
+    logger.error('Request error: ' + err.toString());
+    callback(err);
+  });
 }
 
-function ensureUrl(urlStr, dirpath, opts, callback) {
+function ensureUrl(urlStr, dirpath, argv, callback) {
   // callback signature: function(err)
   var local_filename = url2Filename(urlStr);
   var local_filepath = path.join(dirpath, local_filename);
@@ -94,7 +107,7 @@ function ensureUrl(urlStr, dirpath, opts, callback) {
       callback();
     }
     else {
-      downloadUrl(urlStr, local_filepath, opts, callback);
+      downloadUrl(urlStr, local_filepath, argv, callback);
     }
   });
 }
@@ -135,7 +148,6 @@ if (require.main === module) {
   logger.debug('argv', argv);
 
   var queue = new Queue(argv.concurrency);
-  var request_opts = {timeout: argv.timeout};
 
   queue.on('start', function(url, callback) {
     logger.debug('start', {
@@ -145,7 +157,7 @@ if (require.main === module) {
       _in_progress: queue._in_progress,
       '_queue.length': queue._queue.length,
     });
-    ensureUrl(url, argv.directory, request_opts, callback);
+    ensureUrl(url, argv.directory, argv, callback);
   });
 
   queue.on('finish', function(err, task) {
