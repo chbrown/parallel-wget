@@ -47,7 +47,7 @@ var url2Filename = module.exports.url2Filename = function(urlStr) {
 function downloadUrl(urlStr, filepath, callback) {
   var tmp_filepath = filepath + '.tmp';
 
-  logger.debug(tmp_filepath + ' < creating request');
+  logger.debug(tmp_filepath + ' creating request');
 
   var req = request.get(urlStr);
   req.on('error', function(err) {
@@ -60,21 +60,27 @@ function downloadUrl(urlStr, filepath, callback) {
       callback(err);
     });
 
-    var file = res.pipe(fs.createWriteStream(tmp_filepath));
-    file.on('finish', function() {
-      logger.debug(tmp_filepath + ' done (' + res.headers['content-length'] + ' bytes)');
-      fs.rename(tmp_filepath, filepath, function(err) {
-        if (err) {
-          logger.error('Move file error: ' + err.toString());
-        }
-        logger.debug(tmp_filepath + ' moved to ' + filepath);
+    if (res.statusCode !== 200) {
+      var file = res.pipe(fs.createWriteStream(tmp_filepath));
+      file.on('finish', function() {
+        logger.debug(tmp_filepath + ' done (' + res.headers['content-length'] + ' bytes)');
+        fs.rename(tmp_filepath, filepath, function(err) {
+          if (err) {
+            logger.error('Move file error: ' + err.toString());
+          }
+          logger.debug(tmp_filepath + ' moved to ' + filepath);
+          callback(err);
+        });
+      });
+      file.on('error', function(err) {
+        logger.error('Output file error: ' + tmp_filepath);
         callback(err);
       });
-    });
-    file.on('error', function(err) {
-      logger.error('Output file error: ' + tmp_filepath);
-      callback(err);
-    });
+    }
+    else {
+      logger.error('Response error: ' + res.statusCode, {url: urlStr});
+      callback(res);
+    }
   });
 }
 
@@ -130,13 +136,25 @@ if (require.main === module) {
   var queue = new Queue(argv.concurrency);
 
   queue.on('start', function(url, callback) {
-    logger.debug('start', {completed: queue.completed, remaining: queue.remaining});
+    logger.debug('start', {
+      completed: queue.completed,
+      remaining: queue.remaining,
+      _concurrency: queue._concurrency,
+      _in_progress: queue._in_progress,
+      '_queue.length': queue._queue.length,
+    });
     ensureUrl(url, argv.directory, callback);
   });
 
   queue.on('finish', function(err, task) {
     if (err) logger.error(err.toString(), err);
-    logger.debug('finish', {completed: queue.completed, remaining: queue.remaining});
+    logger.debug('finish', {
+      completed: queue.completed,
+      remaining: queue.remaining,
+      _concurrency: queue._concurrency,
+      _in_progress: queue._in_progress,
+      '_queue.length': queue._queue.length,
+    });
   });
 
   mkdirp(argv.directory, function(err) {
