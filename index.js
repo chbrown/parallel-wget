@@ -6,7 +6,6 @@ var logger = require('winston');
 var mkdirp = require('mkdirp');
 var path = require('path');
 var request = require('request');
-var request = require('request');
 var url = require('url');
 var Queue = require('./queue');
 
@@ -44,12 +43,12 @@ var url2Filename = module.exports.url2Filename = function(urlStr) {
   return date + '_' + m[6];
 };
 
-function downloadUrl(urlStr, filepath, callback) {
+function downloadUrl(urlStr, filepath, opts, callback) {
   var tmp_filepath = filepath + '.tmp';
 
   logger.debug(tmp_filepath + ' creating request');
 
-  var req = request.get(urlStr);
+  var req = request.get(urlStr, opts);
   req.on('error', function(err) {
     logger.error('Request error: ' + err.toString());
     callback(err);
@@ -60,7 +59,7 @@ function downloadUrl(urlStr, filepath, callback) {
       callback(err);
     });
 
-    if (res.statusCode !== 200) {
+    if (res.statusCode == 200) {
       var file = res.pipe(fs.createWriteStream(tmp_filepath));
       file.on('finish', function() {
         logger.debug(tmp_filepath + ' done (' + res.headers['content-length'] + ' bytes)');
@@ -84,7 +83,7 @@ function downloadUrl(urlStr, filepath, callback) {
   });
 }
 
-function ensureUrl(urlStr, dirpath, callback) {
+function ensureUrl(urlStr, dirpath, opts, callback) {
   // callback signature: function(err)
   var local_filename = url2Filename(urlStr);
   var local_filepath = path.join(dirpath, local_filename);
@@ -95,7 +94,7 @@ function ensureUrl(urlStr, dirpath, callback) {
       callback();
     }
     else {
-      downloadUrl(urlStr, local_filepath, callback);
+      downloadUrl(urlStr, local_filepath, opts, callback);
     }
   });
 }
@@ -108,21 +107,24 @@ if (require.main === module) {
       'Usage: <urls.txt mget [options]',
       '',
       'Options:',
-      '  -c, --concurrency 10    number of downloads to perform at one time',
-      '  -d, --directory .       destination directory',
-      '  -v, --verbose           log more events',
+      '  -c, --concurrency 10  number of downloads to perform at one time',
+      '  -d, --directory .     destination directory',
+      '  -t, --timeout 60000   milliseconds to wait before abandoning request',
+      '  -v, --verbose         log more events',
       '',
       'Only STDIN is supported, and it is coerced to utf8',
     ].join('\n'))
     .alias({
       c: 'concurrency',
       d: 'directory',
+      t: 'timeout',
       v: 'verbose',
     })
     .boolean('verbose')
     .default({
       concurrency: 10,
       directory: '.',
+      timeout: 60000,
     })
     .argv;
 
@@ -132,8 +134,8 @@ if (require.main === module) {
 
   logger.debug('argv', argv);
 
-  // var downloadUrls = module.exports.downloadUrls = function(dirpath, concurrency, urls, callback) {
   var queue = new Queue(argv.concurrency);
+  var request_opts = {timeout: argv.timeout};
 
   queue.on('start', function(url, callback) {
     logger.debug('start', {
@@ -143,7 +145,7 @@ if (require.main === module) {
       _in_progress: queue._in_progress,
       '_queue.length': queue._queue.length,
     });
-    ensureUrl(url, argv.directory, callback);
+    ensureUrl(url, argv.directory, request_opts, callback);
   });
 
   queue.on('finish', function(err, task) {
