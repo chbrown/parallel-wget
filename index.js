@@ -131,7 +131,7 @@ if (require.main === module) {
     .usage([
       'Download a list of urls, specified on STDIN',
       '',
-      'Usage: <urls.txt mget [options]',
+      'Usage: <urls.txt parallel-wget [options]',
       '',
       'Options:',
       '  -c, --concurrency 10  number of downloads to perform at one time',
