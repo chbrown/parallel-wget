@@ -127,7 +127,7 @@ function ensureUrl(urlStr, dirpath, argv, callback) {
 }
 
 if (require.main === module) {
-  var argv = require('optimist')
+  var optimist = require('optimist')
     .usage([
       'Download a list of urls, specified on STDIN',
       '',
@@ -147,16 +147,20 @@ if (require.main === module) {
       t: 'timeout',
       v: 'verbose',
     })
-    .boolean('verbose')
+    .boolean(['verbose', 'help'])
     .default({
       concurrency: 10,
       directory: '.',
       timeout: 60000,
-    })
-    .argv;
+    });
+  var argv = optimist.argv;
 
   if (argv.verbose) {
     logger.level = 'debug';
+  }
+  else if (argv.help) {
+    optimist.showHelp();
+    process.exit();
   }
 
   logger.debug('argv', argv);
