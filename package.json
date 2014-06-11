@@ -21,8 +21,8 @@
   },
   "dependencies": {
     "async": "*",
+    "loge": "*",
     "mkdirp": "*",
-    "optimist": "*",
-    "winston": "*"
+    "optimist": "*"
   }
 }
